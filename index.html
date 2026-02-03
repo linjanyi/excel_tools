@@ -2,29 +2,31 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 整理工具 - 自定義標題列版</title>
+    <title>Excel 整理工具 - 整列去重版</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #f0f2f5; padding: 40px; }
-        .card { max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .card { max-width: 550px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
         h2 { color: #007bff; text-align: center; margin-bottom: 25px; }
         .field-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
-        input { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
-        .row { display: flex; gap: 10px; }
+        input[type="number"], input[type="file"] { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
+        .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
-        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; cursor: pointer; }
+        .checkbox-group input { width: 20px; height: 20px; margin-right: 10px; cursor: pointer; }
+        .checkbox-group label { margin-bottom: 0; cursor: pointer; color: #444; flex: 1; font-weight: bold; }
+        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         button:hover { background: #218838; }
-        #log { margin-top: 20px; font-size: 14px; color: #666; padding: 10px; background: #f8f9fa; border-radius: 6px; }
-        .status-success { color: #28a745; font-weight: bold; }
+        #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #28a745; white-space: pre-line; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>📊 Excel 數據分割整理</h2>
+    <h2>📊 Excel 分割去重工具</h2>
     
     <div class="field-group">
         <label>1. 上傳檔案</label>
@@ -41,10 +43,15 @@
             <input type="number" id="rowsPerFile" value="0" min="0" />
         </div>
     </div>
+
+    <div class="checkbox-group" onclick="document.getElementById('doUnique').click();">
+        <input type="checkbox" id="doUnique" checked onclick="event.stopPropagation();">
+        <label for="doUnique">自動去除重複 (整列內容完全相同才刪除)</label>
+    </div>
     
-    <button onclick="processExcel()">開始處理</button>
+    <button onclick="processExcel()">開始處理並下載</button>
     
-    <div id="log">等待檔案上傳...</div>
+    <div id="log">等待操作中...</div>
 </div>
 
 <script>
@@ -55,69 +62,38 @@ function getMMDD() {
     return m + d;
 }
 
+// 整列去重邏輯
+function removeDuplicates(dataArray) {
+    const seen = new Set();
+    return dataArray.filter(row => {
+        // 將整列轉換成字串作為唯一 Key (處理日期與數值的精確比對)
+        const rowString = JSON.stringify(row);
+        if (seen.has(rowString)) return false;
+        seen.add(rowString);
+        return true;
+    });
+}
+
 async function processExcel() {
     const fileInput = document.getElementById('upload');
     const headerRowsSetting = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsVal = document.getElementById('rowsPerFile').value;
+    const doUnique = document.getElementById('doUnique').checked;
     const log = document.getElementById('log');
     
     if (!fileInput.files[0]) { alert("請先選擇檔案！"); return; }
 
+    log.innerHTML = "⌛ 讀取檔案中...";
     const file = fileInput.files[0];
     const rowsSetting = parseInt(rowsVal) || 0; 
     const dateStr = getMMDD();
     
-    log.innerHTML = "⌛ 讀取中...";
-
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    // 根據設定分離標題與資料
     const headers = jsonData.slice(0, headerRowsSetting);
-    const body = jsonData.slice(headerRowsSetting);
-    const totalDataRows = body.length;
+    let body = jsonData.slice(headerRowsSetting);
 
-    if (jsonData.length <= headerRowsSetting) {
-        log.innerHTML = `❌ 錯誤：檔案行數不足 ${headerRowsSetting} 行。`;
-        return;
-    }
-
-    const zip = new JSZip();
-
-    if (rowsSetting === 0) {
-        const fileName = `${dateStr}_${totalDataRows}`;
-        addFileToZip(zip, [...headers, ...body], fileName);
-        log.innerHTML = `模式：不分割，共 ${totalDataRows} 筆資料。`;
-    } else {
-        let fileCount = 0;
-        for (let i = 0; i < totalDataRows; i += rowsSetting) {
-            fileCount++;
-            const chunk = body.slice(i, i + rowsSetting);
-            const fileName = `${dateStr}_${rowsSetting}_${fileCount}`;
-            addFileToZip(zip, [...headers, ...chunk], fileName);
-        }
-        log.innerHTML = `模式：每 ${rowsSetting} 筆分割，共 ${fileCount} 個檔案。`;
-    }
-
-    const zipName = rowsSetting === 0 ? `${dateStr}_${totalDataRows}.zip` : `${dateStr}_${rowsSetting}.zip`;
-
-    log.innerHTML += "<br>📦 正在打包 ZIP...";
-    zip.generateAsync({ type: "blob" }).then(content => {
-        saveAs(content, zipName);
-        log.innerHTML = `<span class="status-success">✅ 完成！已下載 ${zipName}</span>`;
-    });
-}
-
-function addFileToZip(zipInstance, data, fileName) {
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    zipInstance.file(fileName + ".xlsx", buffer);
-}
-</script>
-
-</body>
-</html>
+    if
