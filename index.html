@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 整理工具 - 自動計數版</title>
+    <title>Excel 整理工具 - 自定義標題列版</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -13,7 +13,9 @@
         .field-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
         input { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
-        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .row { display: flex; gap: 10px; }
+        .row .field-group { flex: 1; }
+        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
         button:hover { background: #218838; }
         #log { margin-top: 20px; font-size: 14px; color: #666; padding: 10px; background: #f8f9fa; border-radius: 6px; }
         .status-success { color: #28a745; font-weight: bold; }
@@ -29,9 +31,15 @@
         <input type="file" id="upload" accept=".xlsx, .xls" />
     </div>
     
-    <div class="field-group">
-        <label>2. 每份筆數 (輸入 0 則不分割)</label>
-        <input type="number" id="rowsPerFile" value="0" min="0" />
+    <div class="row">
+        <div class="field-group">
+            <label>2. 保留標題列數</label>
+            <input type="number" id="headerRows" value="2" min="1" />
+        </div>
+        <div class="field-group">
+            <label>3. 每份筆數 (0=不分割)</label>
+            <input type="number" id="rowsPerFile" value="0" min="0" />
+        </div>
     </div>
     
     <button onclick="processExcel()">開始處理</button>
@@ -49,6 +57,7 @@ function getMMDD() {
 
 async function processExcel() {
     const fileInput = document.getElementById('upload');
+    const headerRowsSetting = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsVal = document.getElementById('rowsPerFile').value;
     const log = document.getElementById('log');
     
@@ -65,25 +74,23 @@ async function processExcel() {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    const headers = jsonData.slice(0, 2);
-    const body = jsonData.slice(2);
-    const totalDataRows = body.length; // 實際資料總數
+    // 根據設定分離標題與資料
+    const headers = jsonData.slice(0, headerRowsSetting);
+    const body = jsonData.slice(headerRowsSetting);
+    const totalDataRows = body.length;
 
-    if (totalDataRows === 0) {
-        log.innerHTML = "❌ 錯誤：第 3 列以下無資料。";
+    if (jsonData.length <= headerRowsSetting) {
+        log.innerHTML = `❌ 錯誤：檔案行數不足 ${headerRowsSetting} 行。`;
         return;
     }
 
     const zip = new JSZip();
 
-    // 判斷：不分割 (0) 或 分割 (大於 0)
     if (rowsSetting === 0) {
-        // 不分割：檔名顯示 日期_總筆數
         const fileName = `${dateStr}_${totalDataRows}`;
         addFileToZip(zip, [...headers, ...body], fileName);
-        log.innerHTML = `模式：不分割，共 ${totalDataRows} 筆。`;
+        log.innerHTML = `模式：不分割，共 ${totalDataRows} 筆資料。`;
     } else {
-        // 分割：每份顯示 日期_分割數_流水號
         let fileCount = 0;
         for (let i = 0; i < totalDataRows; i += rowsSetting) {
             fileCount++;
@@ -94,7 +101,6 @@ async function processExcel() {
         log.innerHTML = `模式：每 ${rowsSetting} 筆分割，共 ${fileCount} 個檔案。`;
     }
 
-    // 決定 ZIP 的檔名
     const zipName = rowsSetting === 0 ? `${dateStr}_${totalDataRows}.zip` : `${dateStr}_${rowsSetting}.zip`;
 
     log.innerHTML += "<br>📦 正在打包 ZIP...";
