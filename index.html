@@ -2,26 +2,26 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬能工具 - 精確計數版</title>
+    <title>Excel 萬能工具箱</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #f0f2f5; padding: 20px; }
-        .card { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .card { max-width: 700px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
         h2 { color: #007bff; text-align: center; margin-bottom: 20px; }
         .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #eee; }
-        .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; font-weight: bold; color: #888; }
-        .tab.active { color: #007bff; border-bottom: 2px solid #007bff; }
+        .tab { flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; color: #888; transition: 0.3s; }
+        .tab.active { color: #007bff; border-bottom: 3px solid #007bff; background: #f8fbff; }
         .field-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
         input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
         .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; }
-        .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; cursor: pointer; }
-        .checkbox-group label { margin-bottom: 0; font-size: 14px; cursor: pointer; flex: 1; }
-        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; }
+        .info-box { background: #e8f4fd; color: #2c3e50; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid #3498db; }
+        button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; }
         button:hover { background: #218838; }
         #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff; white-space: pre-line; }
     </style>
@@ -29,40 +29,48 @@
 <body>
 
 <div class="card">
-    <h2 id="mainTitle">📊 Excel 分割工具</h2>
+    <h2 id="mainTitle">📊 Excel 萬能工具箱</h2>
     
     <div class="tabs">
-        <div class="tab active" onclick="switchMode('split')">✂️ 分割模式</div>
-        <div class="tab" onclick="switchMode('merge')">📂 合併模式</div>
+        <div class="tab active" onclick="switchMode('split')">✂️ 分割/合併</div>
+        <div class="tab" onclick="switchMode('transform')">🔄 格式轉換</div>
     </div>
     
     <div class="field-group">
         <label id="fileLabel">1. 上傳檔案 (可多選)</label>
         <input type="file" id="upload" accept=".xlsx, .xls" multiple />
     </div>
-    
-    <div class="row">
-        <div class="field-group">
-            <label>2. 保留標題列數</label>
-            <input type="number" id="headerRows" value="2" min="1" />
+
+    <div id="splitUI">
+        <div class="row">
+            <div class="field-group">
+                <label>2. 保留標題列數</label>
+                <input type="number" id="headerRows" value="2" min="1" />
+            </div>
+            <div class="field-group">
+                <label>3. 每份筆數 (0=不分割)</label>
+                <input type="number" id="rowsPerFile" value="0" min="0" />
+            </div>
         </div>
-        <div class="field-group" id="splitSizeGroup">
-            <label>3. 每份筆數 (0=不分割)</label>
-            <input type="number" id="rowsPerFile" value="0" min="0" />
+        <div class="checkbox-group" onclick="document.getElementById('doUnique').click()">
+            <input type="checkbox" id="doUnique" checked onclick="event.stopPropagation()">
+            <label>自動去除重複 (整列相同才刪除)</label>
+        </div>
+        <div class="checkbox-group" onclick="document.getElementById('removeBlank').click()">
+            <input type="checkbox" id="removeBlank" checked onclick="event.stopPropagation()">
+            <label>自動剔除空白列</label>
         </div>
     </div>
 
-    <div class="checkbox-group" onclick="document.getElementById('doUnique').click()">
-        <input type="checkbox" id="doUnique" checked onclick="event.stopPropagation()">
-        <label>自動去除重複 (整列相同才刪除)</label>
-    </div>
-
-    <div class="checkbox-group" onclick="document.getElementById('removeBlank').click()">
-        <input type="checkbox" id="removeBlank" checked onclick="event.stopPropagation()">
-        <label>自動剔除空白列</label>
+    <div id="transformUI" style="display:none;">
+        <div class="info-box">
+            <strong>📍 轉換規則 (移除 code)：</strong><br>
+            • 窗口名称 → <strong>name</strong> | Cookie → <strong>cookie</strong><br>
+            • 窗口备注 → <strong>remark</strong> | A檔 U 欄位 → <strong>device</strong> (最後一欄)
+        </div>
     </div>
     
-    <button onclick="processExcel()">開始處理並導出</button>
+    <button onclick="executeAction()">開始執行並下載</button>
     
     <div id="log">等待操作...</div>
 </div>
@@ -72,9 +80,9 @@ let currentMode = 'split';
 
 function switchMode(mode) {
     currentMode = mode;
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && mode === 'split') || (i === 1 && mode === 'merge')));
-    document.getElementById('mainTitle').innerText = mode === 'split' ? '📊 Excel 分割工具' : '📂 Excel 合併工具';
-    document.getElementById('splitSizeGroup').style.display = mode === 'split' ? 'block' : 'none';
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && mode === 'split') || (i === 1 && mode === 'transform')));
+    document.getElementById('splitUI').style.display = mode === 'split' ? 'block' : 'none';
+    document.getElementById('transformUI').style.display = mode === 'transform' ? 'block' : 'none';
 }
 
 function getMMDD() {
@@ -84,15 +92,7 @@ function getMMDD() {
 
 function isRowBlank(row) {
     if (!row || row.length === 0) return true;
-    return row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
-}
-
-function removeDuplicates(dataArray) {
-    const seen = new Set();
-    return dataArray.filter(row => {
-        const s = JSON.stringify(row);
-        return seen.has(s) ? false : seen.add(s);
-    });
+    return row.every(cell => !cell || String(cell).trim() === "");
 }
 
 function generateExcelBuffer(headers, body) {
@@ -102,18 +102,27 @@ function generateExcelBuffer(headers, body) {
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 }
 
-async function processExcel() {
+async function executeAction() {
     const fileInput = document.getElementById('upload');
+    const log = document.getElementById('log');
+    if (fileInput.files.length === 0) { alert("請先選擇檔案！"); return; }
+    
+    log.innerHTML = "⌛ 處理中...";
+    const dateStr = getMMDD();
+
+    if (currentMode === 'split') {
+        await handleSplitMerge(fileInput, dateStr, log);
+    } else {
+        await handleTransform(fileInput, dateStr, log);
+    }
+}
+
+async function handleSplitMerge(fileInput, dateStr, log) {
     const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
     const doUnique = document.getElementById('doUnique').checked;
     const doRemoveBlank = document.getElementById('removeBlank').checked;
-    const log = document.getElementById('log');
-    
-    if (fileInput.files.length === 0) { alert("請先選擇檔案！"); return; }
 
-    log.innerHTML = "⌛ 正在讀取資料...";
-    const dateStr = getMMDD();
     let finalHeaders = [];
     let combinedBody = [];
 
@@ -125,46 +134,75 @@ async function processExcel() {
 
         if (i === 0) finalHeaders = jsonData.slice(0, headerRows);
         let body = jsonData.slice(headerRows);
-        
         if (doRemoveBlank) body = body.filter(row => !isRowBlank(row));
         combinedBody = combinedBody.concat(body);
     }
 
     if (doUnique) {
-        const before = combinedBody.length;
-        combinedBody = removeDuplicates(combinedBody);
-        log.innerHTML = `✅ 已清理：剔除 ${before - combinedBody.length} 筆重複/空白資料。`;
+        const seen = new Set();
+        combinedBody = combinedBody.filter(row => {
+            const s = JSON.stringify(row);
+            return seen.has(s) ? false : seen.add(s);
+        });
     }
 
     const total = combinedBody.length;
-    
-    // 判斷是否需要分割 (分割數大於 0 且 總數大於分割數)
-    const isSplitting = currentMode === 'split' && rowsSetting > 0 && total > rowsSetting;
-
-    if (!isSplitting) {
-        // 單一檔案下載
+    if (rowsSetting === 0 || total <= rowsSetting) {
         const buffer = generateExcelBuffer(finalHeaders, combinedBody);
-        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-        saveAs(blob, `${dateStr}_${total}.xlsx`);
-        log.innerHTML += `\n✨ 完成下載單檔：${dateStr}_${total}.xlsx`;
+        saveAs(new Blob([buffer]), `${dateStr}_${total}.xlsx`);
+        log.innerHTML = `✅ 完成下載單檔：${total} 筆資料。`;
     } else {
-        // 多檔案分割下載
         const zip = new JSZip();
         let fileCount = 0;
         for (let i = 0; i < total; i += rowsSetting) {
             fileCount++;
             const chunk = combinedBody.slice(i, i + rowsSetting);
-            const chunkSize = chunk.length; // 修正點：獲取當前區塊的真實長度
             const buffer = generateExcelBuffer(finalHeaders, chunk);
-            
-            // 檔名會根據該檔案實際筆數命名 (例如最後一份會是 3680)
-            zip.file(`${dateStr}_${chunkSize}_${fileCount}.xlsx`, buffer);
+            zip.file(`${dateStr}_${chunk.length}_${fileCount}.xlsx`, buffer);
         }
-        
         const content = await zip.generateAsync({ type: "blob" });
         saveAs(content, `${dateStr}_split_${total}.zip`);
-        log.innerHTML += `\n✨ 已分割為 ${fileCount} 份，下載 ZIP 完畢。`;
+        log.innerHTML = `✅ 已分割為 ${fileCount} 份下載。`;
     }
+}
+
+async function handleTransform(fileInput, dateStr, log) {
+    const data = await fileInput.files[0].arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // 移除 code，總共 19 個欄位
+    const newHeaders = [
+        "acc_id", "id", "group", "name", "remark", "platform", 
+        "username", "password", "fakey", "cookie", "proxytype", 
+        "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
+    ];
+
+    const originalHeaders = jsonData[0];
+    const idxName = originalHeaders.indexOf("窗口名称");
+    const idxCookie = originalHeaders.indexOf("Cookie");
+    const idxRemark = originalHeaders.indexOf("窗口备注");
+    const idxU = 20; // A 檔 U 欄位索引
+
+    const transformedData = [newHeaders];
+
+    for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || isRowBlank(row)) continue;
+
+        let newRow = new Array(19).fill("");
+        newRow[3] = row[idxName] || "";   // name
+        newRow[4] = row[idxRemark] || ""; // remark
+        newRow[9] = row[idxCookie] || ""; // cookie
+        newRow[18] = row[idxU] || "";     // U 檔填入 device (最後一欄)
+
+        transformedData.push(newRow);
+    }
+
+    const buffer = generateExcelBuffer([], transformedData);
+    saveAs(new Blob([buffer]), `${dateStr}_轉換格式_${transformedData.length-1}.xlsx`);
+    log.innerHTML = `✅ 轉換完成！移除 code 欄位並將 U 欄位對應至 device。`;
 }
 </script>
 
