@@ -65,9 +65,9 @@
     <div id="transformUI" style="display:none;">
         <div class="info-box">
             <strong>📍 轉換規則：</strong><br>
-            • <strong>自動忽略 A 檔案前兩列</strong> (標題與第二列)<br>
-            • 窗口名稱 → name | Cookie → cookie<br>
-            • A 檔 U 欄位 (21欄) → <strong>device</strong> (最後一欄)
+            • 自動忽略 A 檔案前兩列 (標題與垃圾資料)<br>
+            • A 檔 U 欄位 (21欄) → <strong>device</strong> (最後一欄)<br>
+            • <strong>輸出檔名：</strong>日期_資料筆數.xlsx
         </div>
     </div>
     
@@ -97,7 +97,7 @@ function isRowBlank(row) {
 }
 
 function generateExcelBuffer(headers, body) {
-    const ws = XLSX.utils.aoa_to_sheet([...headers, ...body]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -149,7 +149,10 @@ async function handleSplitMerge(fileInput, dateStr, log) {
 
     const total = combinedBody.length;
     if (rowsSetting === 0 || total <= rowsSetting) {
-        const buffer = generateExcelBuffer(finalHeaders, combinedBody);
+        const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...combinedBody]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         saveAs(new Blob([buffer]), `${dateStr}_${total}.xlsx`);
         log.innerHTML = `✅ 完成下載單檔：${total} 筆資料。`;
     } else {
@@ -158,7 +161,10 @@ async function handleSplitMerge(fileInput, dateStr, log) {
         for (let i = 0; i < total; i += rowsSetting) {
             fileCount++;
             const chunk = combinedBody.slice(i, i + rowsSetting);
-            const buffer = generateExcelBuffer(finalHeaders, chunk);
+            const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...chunk]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
             zip.file(`${dateStr}_${chunk.length}_${fileCount}.xlsx`, buffer);
         }
         const content = await zip.generateAsync({ type: "blob" });
@@ -179,15 +185,15 @@ async function handleTransform(fileInput, dateStr, log) {
         "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
     ];
 
-    const originalHeaders = jsonData[0]; // 第 1 列作為尋找索引的標題
+    const originalHeaders = jsonData[0];
     const idxName = originalHeaders.indexOf("窗口名称");
     const idxCookie = originalHeaders.indexOf("Cookie");
     const idxRemark = originalHeaders.indexOf("窗口备注");
-    const idxU = 20; // U 欄位索引
+    const idxU = 20; // A 檔 U 欄位 (索引20)
 
-    const transformedData = [newHeaders];
+    let transformedBody = [];
 
-    // 關鍵修改：從 i = 2 開始，代表直接忽略原始檔的第 1 列(索引0)和第 2 列(索引1)
+    // 固定忽略 A 檔前兩列 (i=2 開始)
     for (let i = 2; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || isRowBlank(row)) continue;
@@ -198,12 +204,14 @@ async function handleTransform(fileInput, dateStr, log) {
         newRow[9] = row[idxCookie] || ""; 
         newRow[18] = row[idxU] || "";     
 
-        transformedData.push(newRow);
+        transformedBody.push(newRow);
     }
 
-    const buffer = generateExcelBuffer([], transformedData);
-    saveAs(new Blob([buffer]), `${dateStr}_轉換格式_${transformedData.length-1}.xlsx`);
-    log.innerHTML = `✅ 轉換完成！已自動忽略 A 檔前兩列資料。`;
+    const totalDataCount = transformedBody.length;
+    const buffer = generateExcelBuffer(newHeaders, transformedBody);
+    saveAs(new Blob([buffer]), `${dateStr}_${totalDataCount}.xlsx`);
+    
+    log.innerHTML = `✅ 處理完成！\n• 總計資料：${totalDataCount} 筆\n• 檔名：${dateStr}_${totalDataCount}.xlsx`;
 }
 </script>
 
