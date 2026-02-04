@@ -2,35 +2,42 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 整理工具 - 整列去重版</title>
+    <title>Excel 萬能工具 - 分割/合併/去重</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
-        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #f0f2f5; padding: 40px; }
-        .card { max-width: 550px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
-        h2 { color: #007bff; text-align: center; margin-bottom: 25px; }
-        .field-group { margin-bottom: 20px; }
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #f0f2f5; padding: 20px; }
+        .card { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        h2 { color: #007bff; text-align: center; margin-bottom: 20px; }
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #eee; }
+        .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; font-weight: bold; color: #888; }
+        .tab.active { color: #007bff; border-bottom: 2px solid #007bff; }
+        .field-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
-        input[type="number"], input[type="file"] { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
+        input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
-        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; cursor: pointer; }
-        .checkbox-group input { width: 20px; height: 20px; margin-right: 10px; cursor: pointer; }
-        .checkbox-group label { margin-bottom: 0; cursor: pointer; color: #444; flex: 1; font-weight: bold; }
+        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px; }
+        .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; }
         button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         button:hover { background: #218838; }
-        #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #28a745; white-space: pre-line; }
+        #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff; white-space: pre-line; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>📊 Excel 分割去重工具</h2>
+    <h2 id="mainTitle">📊 Excel 分割工具</h2>
+    
+    <div class="tabs">
+        <div class="tab active" onclick="switchMode('split')">✂️ 分割模式</div>
+        <div class="tab" onclick="switchMode('merge')">📂 合併模式</div>
+    </div>
     
     <div class="field-group">
-        <label>1. 上傳檔案</label>
-        <input type="file" id="upload" accept=".xlsx, .xls" />
+        <label id="fileLabel">1. 上傳檔案 (可多選)</label>
+        <input type="file" id="upload" accept=".xlsx, .xls" multiple />
     </div>
     
     <div class="row">
@@ -38,62 +45,116 @@
             <label>2. 保留標題列數</label>
             <input type="number" id="headerRows" value="2" min="1" />
         </div>
-        <div class="field-group">
+        <div class="field-group" id="splitSizeGroup">
             <label>3. 每份筆數 (0=不分割)</label>
             <input type="number" id="rowsPerFile" value="0" min="0" />
         </div>
     </div>
 
-    <div class="checkbox-group" onclick="document.getElementById('doUnique').click();">
-        <input type="checkbox" id="doUnique" checked onclick="event.stopPropagation();">
-        <label for="doUnique">自動去除重複 (整列內容完全相同才刪除)</label>
+    <div class="checkbox-group">
+        <input type="checkbox" id="doUnique" checked>
+        <label for="doUnique">自動去除重複 (整列相同才刪除)</label>
     </div>
     
-    <button onclick="processExcel()">開始處理並下載</button>
+    <button id="btnAction" onclick="processExcel()">開始處理並下載</button>
     
-    <div id="log">等待操作中...</div>
+    <div id="log">等待操作...</div>
 </div>
 
 <script>
-function getMMDD() {
-    const now = new Date();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return m + d;
+let currentMode = 'split';
+
+function switchMode(mode) {
+    currentMode = mode;
+    const tabs = document.querySelectorAll('.tab');
+    tabs[0].classList.toggle('active', mode === 'split');
+    tabs[1].classList.toggle('active', mode === 'merge');
+    
+    document.getElementById('mainTitle').innerText = mode === 'split' ? '📊 Excel 分割工具' : '📂 Excel 合併工具';
+    document.getElementById('splitSizeGroup').style.display = mode === 'split' ? 'block' : 'none';
+    document.getElementById('log').innerText = `已切換至${mode === 'split' ? '分割' : '合併'}模式`;
 }
 
-// 整列去重邏輯
+function getMMDD() {
+    const now = new Date();
+    return String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+}
+
 function removeDuplicates(dataArray) {
     const seen = new Set();
     return dataArray.filter(row => {
-        // 將整列轉換成字串作為唯一 Key (處理日期與數值的精確比對)
-        const rowString = JSON.stringify(row);
-        if (seen.has(rowString)) return false;
-        seen.add(rowString);
-        return true;
+        const s = JSON.stringify(row);
+        return seen.has(s) ? false : seen.add(s);
     });
 }
 
 async function processExcel() {
     const fileInput = document.getElementById('upload');
-    const headerRowsSetting = parseInt(document.getElementById('headerRows').value) || 0;
-    const rowsVal = document.getElementById('rowsPerFile').value;
+    const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
+    const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
     const doUnique = document.getElementById('doUnique').checked;
     const log = document.getElementById('log');
     
-    if (!fileInput.files[0]) { alert("請先選擇檔案！"); return; }
+    if (fileInput.files.length === 0) { alert("請先選擇檔案！"); return; }
 
-    log.innerHTML = "⌛ 讀取檔案中...";
-    const file = fileInput.files[0];
-    const rowsSetting = parseInt(rowsVal) || 0; 
+    log.innerHTML = "⌛ 處理中...";
     const dateStr = getMMDD();
-    
-    const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    let finalHeaders = [];
+    let combinedBody = [];
 
-    const headers = jsonData.slice(0, headerRowsSetting);
-    let body = jsonData.slice(headerRowsSetting);
+    // --- 讀取所有檔案 ---
+    for (let i = 0; i < fileInput.files.length; i++) {
+        const data = await fileInput.files[i].arrayBuffer();
+        const workbook = XLSX.read(data);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    if
+        if (i === 0) finalHeaders = jsonData.slice(0, headerRows);
+        const body = jsonData.slice(headerRows);
+        combinedBody = combinedBody.concat(body);
+        log.innerHTML = `已讀取第 ${i+1} 個檔案...`;
+    }
+
+    // --- 去重 ---
+    if (doUnique) {
+        const before = combinedBody.length;
+        combinedBody = removeDuplicates(combinedBody);
+        log.innerHTML += `\n✅ 去重完成：刪除 ${before - combinedBody.length} 筆重複資料。`;
+    }
+
+    const zip = new JSZip();
+    const total = combinedBody.length;
+
+    if (currentMode === 'merge' || (currentMode === 'split' && rowsSetting === 0)) {
+        // 合併模式 或 不分割模式
+        const name = `${dateStr}_${total}`;
+        addFileToZip(zip, [...finalHeaders, ...combinedBody], name);
+        log.innerHTML += `\n模式：${currentMode === 'merge' ? '合併' : '不分割'}，總計 ${total} 筆。`;
+    } else {
+        // 分割模式
+        let count = 0;
+        for (let i = 0; i < total; i += rowsSetting) {
+            count++;
+            const chunk = combinedBody.slice(i, i + rowsSetting);
+            addFileToZip(zip, [...finalHeaders, ...chunk], `${dateStr}_${rowsSetting}_${count}`);
+        }
+        log.innerHTML += `\n模式：分割，共 ${count} 份檔案。`;
+    }
+
+    const zipName = `${dateStr}_${currentMode}_${total}.zip`;
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, zipName);
+    log.innerHTML += `\n✨ 完成下載：${zipName}`;
+}
+
+function addFileToZip(zip, data, name) {
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    zip.file(name + ".xlsx", buffer);
+}
+</script>
+
+</body>
+</html>
