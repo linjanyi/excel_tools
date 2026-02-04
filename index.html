@@ -64,13 +64,14 @@
 
     <div id="transformUI" style="display:none;">
         <div class="info-box">
-            <strong>📍 轉換規則 (移除 code)：</strong><br>
-            • 窗口名称 → <strong>name</strong> | Cookie → <strong>cookie</strong><br>
-            • 窗口备注 → <strong>remark</strong> | A檔 U 欄位 → <strong>device</strong> (最後一欄)
+            <strong>📍 轉換規則：</strong><br>
+            • <strong>自動忽略 A 檔案前兩列</strong> (標題與第二列)<br>
+            • 窗口名稱 → name | Cookie → cookie<br>
+            • A 檔 U 欄位 (21欄) → <strong>device</strong> (最後一欄)
         </div>
     </div>
     
-    <button onclick="executeAction()">開始執行並下載</button>
+    <button onclick="executeAction()">開始執行並導出</button>
     
     <div id="log">等待操作...</div>
 </div>
@@ -172,37 +173,37 @@ async function handleTransform(fileInput, dateStr, log) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    // 移除 code，總共 19 個欄位
     const newHeaders = [
         "acc_id", "id", "group", "name", "remark", "platform", 
         "username", "password", "fakey", "cookie", "proxytype", 
         "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
     ];
 
-    const originalHeaders = jsonData[0];
+    const originalHeaders = jsonData[0]; // 第 1 列作為尋找索引的標題
     const idxName = originalHeaders.indexOf("窗口名称");
     const idxCookie = originalHeaders.indexOf("Cookie");
     const idxRemark = originalHeaders.indexOf("窗口备注");
-    const idxU = 20; // A 檔 U 欄位索引
+    const idxU = 20; // U 欄位索引
 
     const transformedData = [newHeaders];
 
-    for (let i = 1; i < jsonData.length; i++) {
+    // 關鍵修改：從 i = 2 開始，代表直接忽略原始檔的第 1 列(索引0)和第 2 列(索引1)
+    for (let i = 2; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || isRowBlank(row)) continue;
 
         let newRow = new Array(19).fill("");
-        newRow[3] = row[idxName] || "";   // name
-        newRow[4] = row[idxRemark] || ""; // remark
-        newRow[9] = row[idxCookie] || ""; // cookie
-        newRow[18] = row[idxU] || "";     // U 檔填入 device (最後一欄)
+        newRow[3] = row[idxName] || "";   
+        newRow[4] = row[idxRemark] || ""; 
+        newRow[9] = row[idxCookie] || ""; 
+        newRow[18] = row[idxU] || "";     
 
         transformedData.push(newRow);
     }
 
     const buffer = generateExcelBuffer([], transformedData);
     saveAs(new Blob([buffer]), `${dateStr}_轉換格式_${transformedData.length-1}.xlsx`);
-    log.innerHTML = `✅ 轉換完成！移除 code 欄位並將 U 欄位對應至 device。`;
+    log.innerHTML = `✅ 轉換完成！已自動忽略 A 檔前兩列資料。`;
 }
 </script>
 
