@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬能工具 - 智慧下載版</title>
+    <title>Excel 萬能工具 - 精確計數版</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -18,8 +18,8 @@
         input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
-        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; }
-        .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; }
+        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; }
+        .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; cursor: pointer; }
         .checkbox-group label { margin-bottom: 0; font-size: 14px; cursor: pointer; flex: 1; }
         button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         button:hover { background: #218838; }
@@ -52,17 +52,17 @@
         </div>
     </div>
 
-    <div class="checkbox-group">
-        <input type="checkbox" id="doUnique" checked>
-        <label for="doUnique">自動去除重複 (整列相同才刪除)</label>
+    <div class="checkbox-group" onclick="document.getElementById('doUnique').click()">
+        <input type="checkbox" id="doUnique" checked onclick="event.stopPropagation()">
+        <label>自動去除重複 (整列相同才刪除)</label>
     </div>
 
-    <div class="checkbox-group">
-        <input type="checkbox" id="removeBlank" checked>
-        <label for="removeBlank">自動剔除空白列 (無內容或僅空格的列)</label>
+    <div class="checkbox-group" onclick="document.getElementById('removeBlank').click()">
+        <input type="checkbox" id="removeBlank" checked onclick="event.stopPropagation()">
+        <label>自動剔除空白列</label>
     </div>
     
-    <button id="btnAction" onclick="processExcel()">開始處理並導出</button>
+    <button onclick="processExcel()">開始處理並導出</button>
     
     <div id="log">等待操作...</div>
 </div>
@@ -72,9 +72,7 @@ let currentMode = 'split';
 
 function switchMode(mode) {
     currentMode = mode;
-    const tabs = document.querySelectorAll('.tab');
-    tabs[0].classList.toggle('active', mode === 'split');
-    tabs[1].classList.toggle('active', mode === 'merge');
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && mode === 'split') || (i === 1 && mode === 'merge')));
     document.getElementById('mainTitle').innerText = mode === 'split' ? '📊 Excel 分割工具' : '📂 Excel 合併工具';
     document.getElementById('splitSizeGroup').style.display = mode === 'split' ? 'block' : 'none';
 }
@@ -97,7 +95,6 @@ function removeDuplicates(dataArray) {
     });
 }
 
-// 將 AOE 資料轉換為 Excel Buffer
 function generateExcelBuffer(headers, body) {
     const ws = XLSX.utils.aoa_to_sheet([...headers, ...body]);
     const wb = XLSX.utils.book_new();
@@ -136,41 +133,37 @@ async function processExcel() {
     if (doUnique) {
         const before = combinedBody.length;
         combinedBody = removeDuplicates(combinedBody);
-        log.innerHTML = `✅ 已清理：剔除 ${before - combinedBody.length} 筆資料。`;
+        log.innerHTML = `✅ 已清理：剔除 ${before - combinedBody.length} 筆重複/空白資料。`;
     }
 
     const total = combinedBody.length;
     
-    // --- 智慧下載邏輯 ---
-    if (currentMode === 'merge' || (currentMode === 'split' && rowsSetting === 0)) {
-        // 單一檔案情況：直接下載 XLSX
-        log.innerHTML += `\n單檔導出中... (共 ${total} 筆)`;
+    // 判斷是否需要分割 (分割數大於 0 且 總數大於分割數)
+    const isSplitting = currentMode === 'split' && rowsSetting > 0 && total > rowsSetting;
+
+    if (!isSplitting) {
+        // 單一檔案下載
         const buffer = generateExcelBuffer(finalHeaders, combinedBody);
         const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         saveAs(blob, `${dateStr}_${total}.xlsx`);
-        log.innerHTML += `\n✨ 完成下載：${dateStr}_${total}.xlsx`;
+        log.innerHTML += `\n✨ 完成下載單檔：${dateStr}_${total}.xlsx`;
     } else {
-        // 多檔案情況：分割並打包 ZIP
+        // 多檔案分割下載
         const zip = new JSZip();
-        let count = 0;
+        let fileCount = 0;
         for (let i = 0; i < total; i += rowsSetting) {
-            count++;
+            fileCount++;
             const chunk = combinedBody.slice(i, i + rowsSetting);
+            const chunkSize = chunk.length; // 修正點：獲取當前區塊的真實長度
             const buffer = generateExcelBuffer(finalHeaders, chunk);
-            zip.file(`${dateStr}_${rowsSetting}_${count}.xlsx`, buffer);
+            
+            // 檔名會根據該檔案實際筆數命名 (例如最後一份會是 3680)
+            zip.file(`${dateStr}_${chunkSize}_${fileCount}.xlsx`, buffer);
         }
         
-        if (count === 1) {
-            // 如果分割完發現只有一檔，也直接下載 XLSX
-            const buffer = generateExcelBuffer(finalHeaders, combinedBody);
-            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            saveAs(blob, `${dateStr}_${total}.xlsx`);
-        } else {
-            log.innerHTML += `\n多檔打包中... (共 ${count} 份)`;
-            const content = await zip.generateAsync({ type: "blob" });
-            saveAs(content, `${dateStr}_split_${total}.zip`);
-        }
-        log.innerHTML += `\n✨ 完成處理！`;
+        const content = await zip.generateAsync({ type: "blob" });
+        saveAs(content, `${dateStr}_split_${total}.zip`);
+        log.innerHTML += `\n✨ 已分割為 ${fileCount} 份，下載 ZIP 完畢。`;
     }
 }
 </script>
