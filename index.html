@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬能工具 - 分割/合併/去重</title>
+    <title>Excel 萬能工具 - 分割/合併/去重/除空白</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -18,8 +18,9 @@
         input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
-        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px; }
+        .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; }
         .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; }
+        .checkbox-group label { margin-bottom: 0; font-size: 14px; cursor: pointer; }
         button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         button:hover { background: #218838; }
         #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff; white-space: pre-line; }
@@ -55,6 +56,11 @@
         <input type="checkbox" id="doUnique" checked>
         <label for="doUnique">自動去除重複 (整列相同才刪除)</label>
     </div>
+
+    <div class="checkbox-group">
+        <input type="checkbox" id="removeBlank" checked>
+        <label for="removeBlank">自動剔除空白列 (無內容或僅空格的列)</label>
+    </div>
     
     <button id="btnAction" onclick="processExcel()">開始處理並下載</button>
     
@@ -69,15 +75,20 @@ function switchMode(mode) {
     const tabs = document.querySelectorAll('.tab');
     tabs[0].classList.toggle('active', mode === 'split');
     tabs[1].classList.toggle('active', mode === 'merge');
-    
     document.getElementById('mainTitle').innerText = mode === 'split' ? '📊 Excel 分割工具' : '📂 Excel 合併工具';
     document.getElementById('splitSizeGroup').style.display = mode === 'split' ? 'block' : 'none';
-    document.getElementById('log').innerText = `已切換至${mode === 'split' ? '分割' : '合併'}模式`;
 }
 
 function getMMDD() {
     const now = new Date();
     return String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+}
+
+// 核心功能：判斷是否為空白列
+function isRowBlank(row) {
+    if (!row || row.length === 0) return true;
+    // 檢查每一格，如果剔除空格後仍有內容則不是空白列
+    return row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
 }
 
 function removeDuplicates(dataArray) {
@@ -93,6 +104,7 @@ async function processExcel() {
     const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
     const doUnique = document.getElementById('doUnique').checked;
+    const doRemoveBlank = document.getElementById('removeBlank').checked;
     const log = document.getElementById('log');
     
     if (fileInput.files.length === 0) { alert("請先選擇檔案！"); return; }
@@ -102,7 +114,6 @@ async function processExcel() {
     let finalHeaders = [];
     let combinedBody = [];
 
-    // --- 讀取所有檔案 ---
     for (let i = 0; i < fileInput.files.length; i++) {
         const data = await fileInput.files[i].arrayBuffer();
         const workbook = XLSX.read(data);
@@ -110,41 +121,42 @@ async function processExcel() {
         const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         if (i === 0) finalHeaders = jsonData.slice(0, headerRows);
-        const body = jsonData.slice(headerRows);
+        let body = jsonData.slice(headerRows);
+        
+        // --- 剔除空白列邏輯 ---
+        if (doRemoveBlank) {
+            body = body.filter(row => !isRowBlank(row));
+        }
+        
         combinedBody = combinedBody.concat(body);
-        log.innerHTML = `已讀取第 ${i+1} 個檔案...`;
+        log.innerHTML = `已讀取並清理第 ${i+1} 個檔案...`;
     }
 
     // --- 去重 ---
     if (doUnique) {
         const before = combinedBody.length;
         combinedBody = removeDuplicates(combinedBody);
-        log.innerHTML += `\n✅ 去重完成：刪除 ${before - combinedBody.length} 筆重複資料。`;
+        log.innerHTML += `\n✅ 處理完成：已刪除重複與空白列。`;
     }
 
     const zip = new JSZip();
     const total = combinedBody.length;
 
     if (currentMode === 'merge' || (currentMode === 'split' && rowsSetting === 0)) {
-        // 合併模式 或 不分割模式
-        const name = `${dateStr}_${total}`;
-        addFileToZip(zip, [...finalHeaders, ...combinedBody], name);
-        log.innerHTML += `\n模式：${currentMode === 'merge' ? '合併' : '不分割'}，總計 ${total} 筆。`;
+        addFileToZip(zip, [...finalHeaders, ...combinedBody], `${dateStr}_${total}`);
     } else {
-        // 分割模式
         let count = 0;
         for (let i = 0; i < total; i += rowsSetting) {
             count++;
             const chunk = combinedBody.slice(i, i + rowsSetting);
             addFileToZip(zip, [...finalHeaders, ...chunk], `${dateStr}_${rowsSetting}_${count}`);
         }
-        log.innerHTML += `\n模式：分割，共 ${count} 份檔案。`;
     }
 
     const zipName = `${dateStr}_${currentMode}_${total}.zip`;
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, zipName);
-    log.innerHTML += `\n✨ 完成下載：${zipName}`;
+    log.innerHTML += `\n✨ 下載完成，最終有效資料共 ${total} 筆。`;
 }
 
 function addFileToZip(zip, data, name) {
