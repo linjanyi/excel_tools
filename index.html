@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬能工具箱</title>
+    <title>Excel 萬能工具箱 - 整合代理分配</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -34,11 +34,23 @@
     <div class="tabs">
         <div class="tab active" onclick="switchMode('split')">✂️ 分割/合併</div>
         <div class="tab" onclick="switchMode('transform')">🔄 格式轉換</div>
+        <div class="tab" onclick="switchMode('proxy')">🌐 代理分配</div>
     </div>
     
-    <div class="field-group">
+    <div id="commonUpload" class="field-group">
         <label id="fileLabel">1. 上傳檔案 (可多選)</label>
         <input type="file" id="upload" accept=".xlsx, .xls" multiple />
+    </div>
+
+    <div id="proxyUpload" style="display:none;">
+        <div class="field-group">
+            <label>1. 上傳用戶表 (Excel)</label>
+            <input type="file" id="userTable" accept=".xlsx, .xls">
+        </div>
+        <div class="field-group">
+            <label>2. 上傳代理表 (Excel，欄位名稱需包含 'proxy')</label>
+            <input type="file" id="proxyTable" accept=".xlsx, .xls">
+        </div>
     </div>
 
     <div id="splitUI">
@@ -67,11 +79,19 @@
             <strong>📍 轉換規則：</strong><br>
             • 自動忽略 A 檔案前兩列 (標題與垃圾資料)<br>
             • A 檔 U 欄位 (21欄) → <strong>device</strong> (最後一欄)<br>
-            • <strong>輸出檔名：</strong>日期_資料筆數.xlsx
+            • 輸出檔名：日期_資料筆數.xlsx
+        </div>
+    </div>
+
+    <div id="proxyUI" style="display:none;">
+        <div class="info-box">
+            <strong>📍 分配規則：</strong><br>
+            • 自動將代理表中的 IP 均勻分配給用戶表。<br>
+            • 固定輸出格式包含 <strong>proxy</strong> (IP) 與 <strong>proxytype</strong> (socks5)。
         </div>
     </div>
     
-    <button onclick="executeAction()">開始執行並導出</button>
+    <button id="mainBtn" onclick="executeAction()">開始執行並導出</button>
     
     <div id="log">等待操作...</div>
 </div>
@@ -81,139 +101,22 @@ let currentMode = 'split';
 
 function switchMode(mode) {
     currentMode = mode;
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && mode === 'split') || (i === 1 && mode === 'transform')));
-    document.getElementById('splitUI').style.display = mode === 'split' ? 'block' : 'none';
-    document.getElementById('transformUI').style.display = mode === 'transform' ? 'block' : 'none';
+    document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', (i === 0 && mode === 'split') || (i === 1 && mode === 'transform') || (i === 2 && mode === 'proxy'));
+    });
+    
+    document.getElementById('commonUpload').style.display = (mode === 'proxy') ? 'none' : 'block';
+    document.getElementById('proxyUpload').style.display = (mode === 'proxy') ? 'block' : 'none';
+    document.getElementById('splitUI').style.display = (mode === 'split') ? 'block' : 'none';
+    document.getElementById('transformUI').style.display = (mode === 'transform') ? 'block' : 'none';
+    document.getElementById('proxyUI').style.display = (mode === 'proxy') ? 'block' : 'none';
+    
+    const btn = document.getElementById('mainBtn');
+    if(mode === 'proxy') btn.innerText = "開始分配代理";
+    else btn.innerText = "開始執行並導出";
 }
 
 function getMMDD() {
     const now = new Date();
     return String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
 }
-
-function isRowBlank(row) {
-    if (!row || row.length === 0) return true;
-    return row.every(cell => !cell || String(cell).trim() === "");
-}
-
-function generateExcelBuffer(headers, body) {
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-}
-
-async function executeAction() {
-    const fileInput = document.getElementById('upload');
-    const log = document.getElementById('log');
-    if (fileInput.files.length === 0) { alert("請先選擇檔案！"); return; }
-    
-    log.innerHTML = "⌛ 處理中...";
-    const dateStr = getMMDD();
-
-    if (currentMode === 'split') {
-        await handleSplitMerge(fileInput, dateStr, log);
-    } else {
-        await handleTransform(fileInput, dateStr, log);
-    }
-}
-
-async function handleSplitMerge(fileInput, dateStr, log) {
-    const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
-    const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
-    const doUnique = document.getElementById('doUnique').checked;
-    const doRemoveBlank = document.getElementById('removeBlank').checked;
-
-    let finalHeaders = [];
-    let combinedBody = [];
-
-    for (let i = 0; i < fileInput.files.length; i++) {
-        const data = await fileInput.files[i].arrayBuffer();
-        const workbook = XLSX.read(data);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-        if (i === 0) finalHeaders = jsonData.slice(0, headerRows);
-        let body = jsonData.slice(headerRows);
-        if (doRemoveBlank) body = body.filter(row => !isRowBlank(row));
-        combinedBody = combinedBody.concat(body);
-    }
-
-    if (doUnique) {
-        const seen = new Set();
-        combinedBody = combinedBody.filter(row => {
-            const s = JSON.stringify(row);
-            return seen.has(s) ? false : seen.add(s);
-        });
-    }
-
-    const total = combinedBody.length;
-    if (rowsSetting === 0 || total <= rowsSetting) {
-        const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...combinedBody]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-        const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        saveAs(new Blob([buffer]), `${dateStr}_${total}.xlsx`);
-        log.innerHTML = `✅ 完成下載單檔：${total} 筆資料。`;
-    } else {
-        const zip = new JSZip();
-        let fileCount = 0;
-        for (let i = 0; i < total; i += rowsSetting) {
-            fileCount++;
-            const chunk = combinedBody.slice(i, i + rowsSetting);
-            const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...chunk]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-            const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            zip.file(`${dateStr}_${chunk.length}_${fileCount}.xlsx`, buffer);
-        }
-        const content = await zip.generateAsync({ type: "blob" });
-        saveAs(content, `${dateStr}_split_${total}.zip`);
-        log.innerHTML = `✅ 已分割為 ${fileCount} 份下載。`;
-    }
-}
-
-async function handleTransform(fileInput, dateStr, log) {
-    const data = await fileInput.files[0].arrayBuffer();
-    const workbook = XLSX.read(data);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-    const newHeaders = [
-        "acc_id", "id", "group", "name", "remark", "platform", 
-        "username", "password", "fakey", "cookie", "proxytype", 
-        "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
-    ];
-
-    const originalHeaders = jsonData[0];
-    const idxName = originalHeaders.indexOf("窗口名称");
-    const idxCookie = originalHeaders.indexOf("Cookie");
-    const idxRemark = originalHeaders.indexOf("窗口备注");
-    const idxU = 20; // A 檔 U 欄位 (索引20)
-
-    let transformedBody = [];
-
-    // 固定忽略 A 檔前兩列 (i=2 開始)
-    for (let i = 2; i < jsonData.length; i++) {
-        const row = jsonData[i];
-        if (!row || isRowBlank(row)) continue;
-
-        let newRow = new Array(19).fill("");
-        newRow[3] = row[idxName] || "";   
-        newRow[4] = row[idxRemark] || ""; 
-        newRow[9] = row[idxCookie] || ""; 
-        newRow[18] = row[idxU] || "";     
-
-        transformedBody.push(newRow);
-    }
-
-    const totalDataCount = transformedBody.length;
-    const buffer = generateExcelBuffer(newHeaders, transformedBody);
-    saveAs(new Blob([buffer]), `${dateStr}_${totalDataCount}.xlsx`);
-    
-    log.innerHTML = `✅ 處理完成！\n• 總計資料：${totalDataCount} 筆\n• 檔名：${dateStr}_${totalDataCount}.xlsx`;
-}
-</script>
-
-</body>
-</html>
