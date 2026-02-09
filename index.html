@@ -2,28 +2,29 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬用工具箱 - 瀏覽器格式轉換版</title>
+    <title>Excel 萬能工具箱 - 瀏覽器格式轉換專業版</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #f0f2f5; padding: 20px; }
-        .card { max-width: 700px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .card { max-width: 750px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
         h2 { color: #007bff; text-align: center; margin-bottom: 20px; }
         .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #eee; }
         .tab { flex: 1; text-align: center; padding: 12px; cursor: pointer; font-weight: bold; color: #888; transition: 0.3s; }
         .tab.active { color: #007bff; border-bottom: 3px solid #007bff; background: #f8fbff; }
         .field-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
-        select, input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
+        select, input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
         .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; }
         .checkbox-group input { width: 18px; height: 18px; margin-right: 10px; }
-        .info-box { background: #e8f4fd; color: #2c3e50; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid #3498db; }
+        .info-box { background: #e8f4fd; color: #2c3e50; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid #3498db; line-height: 1.6; }
         button { width: 100%; padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; }
         button:hover { background: #218838; }
         #log { margin-top: 20px; font-size: 14px; color: #444; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff; white-space: pre-line; }
+        .highlight { color: #d9534f; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -32,7 +33,7 @@
     <h2 id="mainTitle">📊 Excel 萬能工具箱</h2>
     
     <div class="tabs">
-        <div class="tab active" onclick="switchMode('split')">✂️ 分割/合併</div>
+        <div class="tab active" onclick="switchMode('split')">✂️ 分割/合併/清洗</div>
         <div class="tab" onclick="switchMode('transform')">🔄 格式轉換</div>
     </div>
     
@@ -60,19 +61,25 @@
             <input type="checkbox" id="removeBlank" checked onclick="event.stopPropagation()">
             <label>自動剔除空白列</label>
         </div>
+        <div class="info-box">
+            <strong>✨ 自動清洗功能已啟動：</strong><br>
+            • 合併時將自動清空第一列 <span class="highlight">U 欄 (第21欄) 及之後</span> 的標題。<br>
+            • <span class="highlight">第二列說明文字</span> 將會完整保留。
+        </div>
     </div>
 
     <div id="transformUI" style="display:none;">
         <div class="field-group">
             <label>2. 選擇轉換模式</label>
             <select id="transMode">
-                <option value="bitToAds">比特轉Ads (BitBrowser -> AdsPower)</option>
-                <option value="adsToBit">Ads轉比特 (AdsPower -> BitBrowser)</option>
+                <option value="bitToAds">比特轉 Ads (BitBrowser → AdsPower)</option>
+                <option value="adsToBit">Ads 轉比特 (AdsPower → BitBrowser)</option>
             </select>
         </div>
-        <div class="info-box" id="modeDesc">
-            • <strong>比特轉Ads：</strong>忽略前2列，提取 窗口名稱、備註、Cookie、U欄(device)。<br>
-            • <strong>Ads轉比特：</strong>將 name 轉為 窗口名稱，cookie 轉為 Cookie，並生成比特專用雙標題。
+        <div class="info-box">
+            <strong>📍 轉換規則說明：</strong><br>
+            • <b>比特轉 Ads：</b>自動提取「窗口名稱、備註、Cookie、U欄」對應至 Ads 格式。<br>
+            • <b>Ads 轉比特：</b>建立比特雙標題。第一列標題僅保留至 T 欄 (ID)，<span class="highlight">U 欄以後第一列不留標題</span>，第二列保留系統說明。
         </div>
     </div>
     
@@ -121,7 +128,7 @@ async function executeAction() {
     }
 }
 
-// --- 原有的分割合併邏輯 ---
+// --- 模式：分割 / 合併 / 清洗 ---
 async function handleSplitMerge(fileInput, dateStr, log) {
     const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
@@ -137,7 +144,19 @@ async function handleSplitMerge(fileInput, dateStr, log) {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-        if (i === 0) finalHeaders = jsonData.slice(0, headerRows);
+        if (i === 0) {
+            // 標題清洗邏輯
+            let headers = jsonData.slice(0, headerRows);
+            if (headers.length > 0 && headers[0]) {
+                // 清洗第一列：從索引 20 (U欄) 開始往後全部清空
+                for (let idx = 20; idx < headers[0].length; idx++) {
+                    headers[0][idx] = "";
+                }
+                // 第二列及其他原封不動保留
+            }
+            finalHeaders = headers;
+        }
+        
         let body = jsonData.slice(headerRows);
         if (doRemoveBlank) body = body.filter(row => !isRowBlank(row));
         combinedBody = combinedBody.concat(body);
@@ -151,8 +170,7 @@ async function handleSplitMerge(fileInput, dateStr, log) {
         });
     }
 
-    const total = combinedBody.length;
-    saveExcel(finalHeaders.concat(combinedBody), `${dateStr}_${total}.xlsx`, rowsSetting, dateStr, log);
+    saveExcelFinal(finalHeaders, combinedBody, rowsSetting, dateStr, log, "Processed");
 }
 
 // --- 模式：比特轉 Ads ---
@@ -168,7 +186,7 @@ async function handleBitToAds(fileInput, dateStr, log) {
         "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
     ];
 
-    const originalHeaders = jsonData[0]; // 第一列通常是標題
+    const originalHeaders = jsonData[0]; 
     const idxName = originalHeaders.indexOf("窗口名称");
     const idxCookie = originalHeaders.indexOf("Cookie");
     const idxRemark = originalHeaders.indexOf("窗口备注");
@@ -185,7 +203,7 @@ async function handleBitToAds(fileInput, dateStr, log) {
         newRow[18] = row[idxU] || "";     
         body.push(newRow);
     }
-    saveExcel([adsHeaders, ...body], `BitToAds_${dateStr}_${body.length}.xlsx`, 0, dateStr, log);
+    saveExcelFinal([adsHeaders], body, 0, dateStr, log, "BitToAds");
 }
 
 // --- 模式：Ads 轉比特 ---
@@ -195,9 +213,11 @@ async function handleAdsToBit(fileInput, dateStr, log) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    // 比特瀏覽器標準雙標題
-    const bitHeader1 = ["窗口名称","分组","账号平台","用户名","密码","2FA秘钥","Cookie","打开指定网址","代理类型","代理信息","IP查詢渠道","刷新URL","國家/地區（針對動態IP）","州/省（針對動態IP）","城市（針對動態IP）","窗口備註","User Agent","窗口尺寸","序號","ID","說明"];
-    const bitHeader2 = ["說明：此表為導出窗口數據... (系統自動生成)"]; 
+    // 比特標題一：只到 ID (T欄)，後續保持空白
+    const bitHeader1 = ["窗口名称","分组","账号平台","用户名","密码","2FA秘钥","Cookie","打开指定网址","代理类型","代理信息","IP查询渠道","刷新URL","国家/地区（针对动态IP）","州/省（针对动态IP）","城市（针对动态IP）","窗口备注","User Agent","窗口尺寸","序号","ID"];
+    
+    // 比特標題二：標準說明文字
+    const bitHeader2 = ["说明：\n此表为导出窗口数据，同时可以用于“批量更新窗口信息”使用，当做为“批量更新窗口信息”使用时，务必注意：\n1. 不要删除或修改Excel文件中的序号、ID，会导致识别不出窗口信息，不想更新的数据，请勿改動或删除；\n2. 不能对表头进行增加、删除、修改，该表的前2行不要有任何修改，否则将导致更新窗口信息出错！\n3. 代理类型、代理信息 等字段，如需修改，请参考“导入窗口模版”中说明进行修改；\n4. 如果不想修改某一个单元格中的内容，请在此单元格中填写“skip”这个词即可。注意：若清空该单元格，导入后该字段則会为空值！\n5. “国家/地区”格式为2位字母，可以参考下方附带的“国家代码表”填写；“州/省”、“城市”请根据相应代理平台的地区代码填写。"]; 
 
     const originalHeaders = jsonData[0];
     const idxName = originalHeaders.indexOf("name");
@@ -210,47 +230,42 @@ async function handleAdsToBit(fileInput, dateStr, log) {
         const row = jsonData[i];
         if (!row || isRowBlank(row)) continue;
         
-        // 根據範本建立 21 個欄位的比特格式
         let newRow = new Array(21).fill("");
-        newRow[0] = row[idxName] || "";    // 窗口名稱
-        newRow[6] = row[idxCookie] || "";  // Cookie
-        newRow[15] = row[idxRemark] || ""; // 窗口備註
-        newRow[20] = row[idxDevice] || ""; // 第21欄位 (U欄)
-        
+        newRow[0] = row[idxName] || "";    
+        newRow[6] = row[idxCookie] || "";  
+        newRow[15] = row[idxRemark] || ""; 
+        newRow[20] = row[idxDevice] || ""; // 資料填在 U 欄
         body.push(newRow);
     }
-    saveExcel([bitHeader1, bitHeader2, ...body], `AdsToBit_${dateStr}_${body.length}.xlsx`, 0, dateStr, log);
+    saveExcelFinal([bitHeader1, bitHeader2], body, 0, dateStr, log, "AdsToBit");
 }
 
-// --- 通用導出函數 ---
-async function saveExcel(fullData, defaultName, rowsSetting, dateStr, log) {
-    const totalData = fullData.length;
+// --- 通用導出邏輯 ---
+async function saveExcelFinal(headers, body, rowsSetting, dateStr, log, prefix) {
+    const total = body.length;
     
-    if (rowsSetting === 0 || fullData.length <= rowsSetting + 2) {
-        const ws = XLSX.utils.aoa_to_sheet(fullData);
+    if (rowsSetting === 0 || total <= rowsSetting) {
+        const ws = XLSX.utils.aoa_to_sheet([...headers, ...body]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        saveAs(new Blob([buffer]), defaultName);
-        log.innerHTML = `✅ 處理完成：${defaultName}`;
+        saveAs(new Blob([buffer]), `${prefix}_${dateStr}_${total}.xlsx`);
+        log.innerHTML = `✅ 下載完成：${total} 筆資料。`;
     } else {
-        // 如果有設定分割 (針對分割合併模式)
-        const headers = fullData.slice(0, parseInt(document.getElementById('headerRows').value));
-        const body = fullData.slice(parseInt(document.getElementById('headerRows').value));
         const zip = new JSZip();
         let fileCount = 0;
-        for (let i = 0; i < body.length; i += rowsSetting) {
+        for (let i = 0; i < total; i += rowsSetting) {
             fileCount++;
             const chunk = body.slice(i, i + rowsSetting);
             const ws = XLSX.utils.aoa_to_sheet([...headers, ...chunk]);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
             const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            zip.file(`${dateStr}_part${fileCount}.xlsx`, buffer);
+            zip.file(`${prefix}_${dateStr}_${chunk.length}_${fileCount}.xlsx`, buffer);
         }
         const content = await zip.generateAsync({ type: "blob" });
-        saveAs(content, `${dateStr}_split_package.zip`);
-        log.innerHTML = `✅ 已分割為 ${fileCount} 份下載。`;
+        saveAs(content, `${prefix}_${dateStr}_split_all.zip`);
+        log.innerHTML = `✅ 已分割為 ${fileCount} 份並打包下載。`;
     }
 }
 </script>
