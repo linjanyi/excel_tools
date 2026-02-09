@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Excel 萬能工具箱</title>
+    <title>Excel 萬用工具箱 - 瀏覽器格式轉換版</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -15,7 +15,7 @@
         .tab.active { color: #007bff; border-bottom: 3px solid #007bff; background: #f8fbff; }
         .field-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
-        input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
+        select, input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 8px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .row .field-group { flex: 1; }
         .checkbox-group { display: flex; align-items: center; background: #e9ecef; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; }
@@ -63,11 +63,16 @@
     </div>
 
     <div id="transformUI" style="display:none;">
-        <div class="info-box">
-            <strong>📍 轉換規則：</strong><br>
-            • 自動忽略 A 檔案前兩列 (標題與垃圾資料)<br>
-            • A 檔 U 欄位 (21欄) → <strong>device</strong> (最後一欄)<br>
-            • <strong>輸出檔名：</strong>日期_資料筆數.xlsx
+        <div class="field-group">
+            <label>2. 選擇轉換模式</label>
+            <select id="transMode">
+                <option value="bitToAds">比特轉Ads (BitBrowser -> AdsPower)</option>
+                <option value="adsToBit">Ads轉比特 (AdsPower -> BitBrowser)</option>
+            </select>
+        </div>
+        <div class="info-box" id="modeDesc">
+            • <strong>比特轉Ads：</strong>忽略前2列，提取 窗口名稱、備註、Cookie、U欄(device)。<br>
+            • <strong>Ads轉比特：</strong>將 name 轉為 窗口名稱，cookie 轉為 Cookie，並生成比特專用雙標題。
         </div>
     </div>
     
@@ -96,13 +101,6 @@ function isRowBlank(row) {
     return row.every(cell => !cell || String(cell).trim() === "");
 }
 
-function generateExcelBuffer(headers, body) {
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-}
-
 async function executeAction() {
     const fileInput = document.getElementById('upload');
     const log = document.getElementById('log');
@@ -114,10 +112,16 @@ async function executeAction() {
     if (currentMode === 'split') {
         await handleSplitMerge(fileInput, dateStr, log);
     } else {
-        await handleTransform(fileInput, dateStr, log);
+        const transType = document.getElementById('transMode').value;
+        if (transType === 'bitToAds') {
+            await handleBitToAds(fileInput, dateStr, log);
+        } else {
+            await handleAdsToBit(fileInput, dateStr, log);
+        }
     }
 }
 
+// --- 原有的分割合併邏輯 ---
 async function handleSplitMerge(fileInput, dateStr, log) {
     const headerRows = parseInt(document.getElementById('headerRows').value) || 0;
     const rowsSetting = parseInt(document.getElementById('rowsPerFile').value) || 0;
@@ -148,70 +152,106 @@ async function handleSplitMerge(fileInput, dateStr, log) {
     }
 
     const total = combinedBody.length;
-    if (rowsSetting === 0 || total <= rowsSetting) {
-        const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...combinedBody]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-        const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        saveAs(new Blob([buffer]), `${dateStr}_${total}.xlsx`);
-        log.innerHTML = `✅ 完成下載單檔：${total} 筆資料。`;
-    } else {
-        const zip = new JSZip();
-        let fileCount = 0;
-        for (let i = 0; i < total; i += rowsSetting) {
-            fileCount++;
-            const chunk = combinedBody.slice(i, i + rowsSetting);
-            const ws = XLSX.utils.aoa_to_sheet([...finalHeaders, ...chunk]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-            const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            zip.file(`${dateStr}_${chunk.length}_${fileCount}.xlsx`, buffer);
-        }
-        const content = await zip.generateAsync({ type: "blob" });
-        saveAs(content, `${dateStr}_split_${total}.zip`);
-        log.innerHTML = `✅ 已分割為 ${fileCount} 份下載。`;
-    }
+    saveExcel(finalHeaders.concat(combinedBody), `${dateStr}_${total}.xlsx`, rowsSetting, dateStr, log);
 }
 
-async function handleTransform(fileInput, dateStr, log) {
+// --- 模式：比特轉 Ads ---
+async function handleBitToAds(fileInput, dateStr, log) {
     const data = await fileInput.files[0].arrayBuffer();
     const workbook = XLSX.read(data);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    const newHeaders = [
+    const adsHeaders = [
         "acc_id", "id", "group", "name", "remark", "platform", 
         "username", "password", "fakey", "cookie", "proxytype", 
         "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
     ];
 
-    const originalHeaders = jsonData[0];
+    const originalHeaders = jsonData[0]; // 第一列通常是標題
     const idxName = originalHeaders.indexOf("窗口名称");
     const idxCookie = originalHeaders.indexOf("Cookie");
     const idxRemark = originalHeaders.indexOf("窗口备注");
-    const idxU = 20; // A 檔 U 欄位 (索引20)
+    const idxU = 20; 
 
-    let transformedBody = [];
-
-    // 固定忽略 A 檔前兩列 (i=2 開始)
+    let body = [];
     for (let i = 2; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || isRowBlank(row)) continue;
-
         let newRow = new Array(19).fill("");
         newRow[3] = row[idxName] || "";   
-        newRow[4] = row[idxRemark] || ""; 
-        newRow[9] = row[idxCookie] || ""; 
+        newRow[4] = row[idxRemark] || "";  
+        newRow[9] = row[idxCookie] || "";  
         newRow[18] = row[idxU] || "";     
-
-        transformedBody.push(newRow);
+        body.push(newRow);
     }
+    saveExcel([adsHeaders, ...body], `BitToAds_${dateStr}_${body.length}.xlsx`, 0, dateStr, log);
+}
 
-    const totalDataCount = transformedBody.length;
-    const buffer = generateExcelBuffer(newHeaders, transformedBody);
-    saveAs(new Blob([buffer]), `${dateStr}_${totalDataCount}.xlsx`);
+// --- 模式：Ads 轉比特 ---
+async function handleAdsToBit(fileInput, dateStr, log) {
+    const data = await fileInput.files[0].arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // 比特瀏覽器標準雙標題
+    const bitHeader1 = ["窗口名称","分组","账号平台","用户名","密码","2FA秘钥","Cookie","打开指定网址","代理类型","代理信息","IP查詢渠道","刷新URL","國家/地區（針對動態IP）","州/省（針對動態IP）","城市（針對動態IP）","窗口備註","User Agent","窗口尺寸","序號","ID","說明"];
+    const bitHeader2 = ["說明：此表為導出窗口數據... (系統自動生成)"]; 
+
+    const originalHeaders = jsonData[0];
+    const idxName = originalHeaders.indexOf("name");
+    const idxCookie = originalHeaders.indexOf("cookie");
+    const idxRemark = originalHeaders.indexOf("remark");
+    const idxDevice = originalHeaders.indexOf("device");
+
+    let body = [];
+    for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || isRowBlank(row)) continue;
+        
+        // 根據範本建立 21 個欄位的比特格式
+        let newRow = new Array(21).fill("");
+        newRow[0] = row[idxName] || "";    // 窗口名稱
+        newRow[6] = row[idxCookie] || "";  // Cookie
+        newRow[15] = row[idxRemark] || ""; // 窗口備註
+        newRow[20] = row[idxDevice] || ""; // 第21欄位 (U欄)
+        
+        body.push(newRow);
+    }
+    saveExcel([bitHeader1, bitHeader2, ...body], `AdsToBit_${dateStr}_${body.length}.xlsx`, 0, dateStr, log);
+}
+
+// --- 通用導出函數 ---
+async function saveExcel(fullData, defaultName, rowsSetting, dateStr, log) {
+    const totalData = fullData.length;
     
-    log.innerHTML = `✅ 處理完成！\n• 總計資料：${totalDataCount} 筆\n• 檔名：${dateStr}_${totalDataCount}.xlsx`;
+    if (rowsSetting === 0 || fullData.length <= rowsSetting + 2) {
+        const ws = XLSX.utils.aoa_to_sheet(fullData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        saveAs(new Blob([buffer]), defaultName);
+        log.innerHTML = `✅ 處理完成：${defaultName}`;
+    } else {
+        // 如果有設定分割 (針對分割合併模式)
+        const headers = fullData.slice(0, parseInt(document.getElementById('headerRows').value));
+        const body = fullData.slice(parseInt(document.getElementById('headerRows').value));
+        const zip = new JSZip();
+        let fileCount = 0;
+        for (let i = 0; i < body.length; i += rowsSetting) {
+            fileCount++;
+            const chunk = body.slice(i, i + rowsSetting);
+            const ws = XLSX.utils.aoa_to_sheet([...headers, ...chunk]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            zip.file(`${dateStr}_part${fileCount}.xlsx`, buffer);
+        }
+        const content = await zip.generateAsync({ type: "blob" });
+        saveAs(content, `${dateStr}_split_package.zip`);
+        log.innerHTML = `✅ 已分割為 ${fileCount} 份下載。`;
+    }
 }
 </script>
 
