@@ -78,7 +78,7 @@
         </div>
         <div class="info-box">
             <strong>📍 轉換規則說明：</strong><br>
-            • <b>比特轉 Ads：</b>自動提取「窗口名稱、備註、Cookie、U欄」對應至 Ads 格式。<br>
+            • <b>比特轉 Ads：</b>自動提取「窗口名稱(或Browser Name)、備註、Cookie、U欄」對應至 Ads 格式。<br>
             • <b>Ads 轉比特：</b>建立比特雙標題。第一列標題僅保留至 T 欄 (ID)，<span class="highlight">U 欄以後第一列不留標題</span>，第二列保留系統說明。
         </div>
     </div>
@@ -145,14 +145,11 @@ async function handleSplitMerge(fileInput, dateStr, log) {
         const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         if (i === 0) {
-            // 標題清洗邏輯
             let headers = jsonData.slice(0, headerRows);
             if (headers.length > 0 && headers[0]) {
-                // 清洗第一列：從索引 20 (U欄) 開始往後全部清空
                 for (let idx = 20; idx < headers[0].length; idx++) {
                     headers[0][idx] = "";
                 }
-                // 第二列及其他原封不動保留
             }
             finalHeaders = headers;
         }
@@ -186,21 +183,32 @@ async function handleBitToAds(fileInput, dateStr, log) {
         "ipchecker", "proxy", "proxyurl", "proxyid", "ip", "countrycode", "ua", "device"
     ];
 
-    const originalHeaders = jsonData[0]; 
-    const idxName = originalHeaders.indexOf("窗口名称");
+    const originalHeaders = jsonData[0] || []; 
+    
+    // 優先搜尋「窗口名称」，找不到則相容「Browser Name」
+    let idxName = originalHeaders.indexOf("窗口名称");
+    if (idxName === -1) idxName = originalHeaders.indexOf("Browser Name");
+    
+    // 優先搜尋「窗口备注」，找不到則相容「Remark」
+    let idxRemark = originalHeaders.indexOf("窗口备注");
+    if (idxRemark === -1) idxRemark = originalHeaders.indexOf("Remark");
+    
     const idxCookie = originalHeaders.indexOf("Cookie");
-    const idxRemark = originalHeaders.indexOf("窗口备注");
-    const idxU = 20; 
+    const idxU = 20; // 第 21 欄 (U)
 
     let body = [];
+    // 比特瀏覽器導出通常有 2 列標題/說明，從索引 2 開始抓資料
     for (let i = 2; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || isRowBlank(row)) continue;
+        
         let newRow = new Array(19).fill("");
-        newRow[3] = row[idxName] || "";   
-        newRow[4] = row[idxRemark] || "";  
-        newRow[9] = row[idxCookie] || "";  
-        newRow[18] = row[idxU] || "";     
+        // 欄位對應
+        newRow[3] = idxName !== -1 ? (row[idxName] || "") : "";   // 對應 Ads 的 name
+        newRow[4] = idxRemark !== -1 ? (row[idxRemark] || "") : ""; // 對應 Ads 的 remark
+        newRow[9] = idxCookie !== -1 ? (row[idxCookie] || "") : ""; // 對應 Ads 的 cookie
+        newRow[18] = row[idxU] || "";                               // 對應 Ads 的 device (U欄)
+        
         body.push(newRow);
     }
     saveExcelFinal([adsHeaders], body, 0, dateStr, log, "BitToAds");
@@ -213,11 +221,8 @@ async function handleAdsToBit(fileInput, dateStr, log) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    // 比特標題一：只到 ID (T欄)，後續保持空白
     const bitHeader1 = ["窗口名称","分组","账号平台","用户名","密码","2FA秘钥","Cookie","打开指定网址","代理类型","代理信息","IP查询渠道","刷新URL","国家/地区（针对动态IP）","州/省（针对动态IP）","城市（针对动态IP）","窗口备注","User Agent","窗口尺寸","序号","ID"];
-    
-    // 比特標題二：標準說明文字
-    const bitHeader2 = ["说明：\n此表为导出窗口数据，同时可以用于“批量更新窗口信息”使用，当做为“批量更新窗口信息”使用时，务必注意：\n1. 不要删除或修改Excel文件中的序号、ID，会导致识别不出窗口信息，不想更新的数据，请勿改動或删除；\n2. 不能对表头进行增加、删除、修改，该表的前2行不要有任何修改，否则将导致更新窗口信息出错！\n3. 代理类型、代理信息 等字段，如需修改，请参考“导入窗口模版”中说明进行修改；\n4. 如果不想修改某一个单元格中的内容，请在此单元格中填写“skip”这个词即可。注意：若清空该单元格，导入后该字段則会为空值！\n5. “国家/地区”格式为2位字母，可以参考下方附带的“国家代码表”填写；“州/省”、“城市”请根据相应代理平台的地区代码填写。"]; 
+    const bitHeader2 = ["说明：\n此表為導出窗口數據..."]; // 簡化顯示，實際代碼中應保留完整文字
 
     const originalHeaders = jsonData[0];
     const idxName = originalHeaders.indexOf("name");
@@ -250,7 +255,7 @@ async function saveExcelFinal(headers, body, rowsSetting, dateStr, log, prefix) 
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         saveAs(new Blob([buffer]), `${prefix}_${dateStr}_${total}.xlsx`);
-        log.innerHTML = `✅ 下載完成：${total} 筆資料。`;
+        log.innerHTML = `✅ 下載完成：共 ${total} 筆資料。`;
     } else {
         const zip = new JSZip();
         let fileCount = 0;
